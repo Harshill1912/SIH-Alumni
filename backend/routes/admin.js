@@ -32,4 +32,48 @@ router.put("/reject/:id", verifyAdmin, async (req, res) => {
   }
 });
 
+import Job from "../models/Job.js";
+
+router.get("/dashboard", verifyAdmin, async (req, res) => {
+  try {
+    const approvedAlumni = await Alumni.countDocuments({ status: "approved" });
+    const pendingAlumni = await Alumni.countDocuments({ status: "pending" });
+    const totalJobsPosted = await Job.countDocuments();
+
+    const recentApprovals = await Alumni.find({ status: "approved" })
+      .sort({ updatedAt: -1 })
+      .limit(5)
+      .select("name email course graduationYear company designation");
+
+    const recentJobs = await Job.find()
+      .sort({ createdAt: -1 })
+      .limit(5)
+      .select("title company location eligibility");
+
+    const alumniByCourse = await Alumni.aggregate([
+      { $match: { status: "approved" } },
+      { $group: { _id: "$course", count: { $sum: 1 } } }
+    ]);
+
+    const topCompanies = await Job.aggregate([
+      { $group: { _id: "$company", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: 5 }
+    ]);
+
+    res.status(200).json({
+      approvedAlumni,
+      pendingAlumni,
+      totalJobsPosted,
+      recentApprovals,
+      recentJobs,
+      alumniByCourse,
+      topCompanies
+    });
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching dashboard data", error: error.message });
+  }
+});
+
+
 export default router;

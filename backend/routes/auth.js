@@ -23,9 +23,9 @@ router.post("/login", async (req, res) => {
     const alumni = await Alumni.findOne({ email });
     if (!alumni) return res.status(404).json({ message: "Alumni not found" });
     if (alumni.status !== "approved") return res.status(403).json({ message: "Your account is pending admin approval" });
-
+   
     const isMatch = await bcrypt.compare(password, alumni.password);
-    if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
+if (!isMatch) return res.status(401).json({ message: "Invalid credentials" });
 
     const token = jwt.sign({ id: alumni._id, role: alumni.role }, process.env.JWT_SECRET, { expiresIn: "1d" });
     res.status(200).json({ message: "Login successful", token });
