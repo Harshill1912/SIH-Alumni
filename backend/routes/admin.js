@@ -1,10 +1,12 @@
 import express from "express";
 import Alumni from "../models/Alumni.js";
+import Student from "../models/student.js";
+import Job from "../models/Job.js";
 import { verifyAdmin } from "../middleware/verifyAdmin.js";
 
 const router = express.Router();
 
-// Protected routes: only admin can access
+// Alumni approval/rejection
 router.get("/pending", verifyAdmin, async (req, res) => {
   try {
     const pending = await Alumni.find({ status: "pending" });
@@ -32,12 +34,41 @@ router.put("/reject/:id", verifyAdmin, async (req, res) => {
   }
 });
 
-import Job from "../models/Job.js";
+// Student approval/rejection
+router.get("/students/pending", verifyAdmin, async (req, res) => {
+  try {
+    const pendingStudents = await Student.find({ status: "pending" });
+    res.status(200).json(pendingStudents);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching pending students", error: error.message });
+  }
+});
 
+router.put("/students/approve/:id", verifyAdmin, async (req, res) => {
+  try {
+    const student = await Student.findByIdAndUpdate(req.params.id, { status: "approved" }, { new: true });
+    res.status(200).json(student);
+  } catch (error) {
+    res.status(500).json({ message: "Error approving student", error: error.message });
+  }
+});
+
+router.put("/students/reject/:id", verifyAdmin, async (req, res) => {
+  try {
+    const student = await Student.findByIdAndUpdate(req.params.id, { status: "rejected" }, { new: true });
+    res.status(200).json(student);
+  } catch (error) {
+    res.status(500).json({ message: "Error rejecting student", error: error.message });
+  }
+});
+
+// Admin Dashboard
 router.get("/dashboard", verifyAdmin, async (req, res) => {
   try {
     const approvedAlumni = await Alumni.countDocuments({ status: "approved" });
     const pendingAlumni = await Alumni.countDocuments({ status: "pending" });
+    const approvedStudents = await Student.countDocuments({ status: "approved" });
+    const pendingStudents = await Student.countDocuments({ status: "pending" });
     const totalJobsPosted = await Job.countDocuments();
 
     const recentApprovals = await Alumni.find({ status: "approved" })
@@ -64,6 +95,8 @@ router.get("/dashboard", verifyAdmin, async (req, res) => {
     res.status(200).json({
       approvedAlumni,
       pendingAlumni,
+      approvedStudents,
+      pendingStudents,
       totalJobsPosted,
       recentApprovals,
       recentJobs,
@@ -74,6 +107,5 @@ router.get("/dashboard", verifyAdmin, async (req, res) => {
     res.status(500).json({ message: "Error fetching dashboard data", error: error.message });
   }
 });
-
 
 export default router;

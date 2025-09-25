@@ -1,6 +1,6 @@
 import express from "express";
-import Announcement from "../models/Announcement.js";
-import { verifyToken } from "../middleware/verifyToken.js"; // alumni or admin
+import Announcement from "../models/AnnoucementSchema.js"
+import { verifyToken } from "../middleware/verifyAdmin.js"; // alumni or admin
 
 const router = express.Router();
 

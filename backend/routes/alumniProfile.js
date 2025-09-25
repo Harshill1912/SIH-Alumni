@@ -47,4 +47,20 @@ router.put('/profile',verifyToken,async(req,res)=>{
     }
 })
 
+router.get("/search",async(req,res)=>{
+    try {
+        const{name,email,company,location}=req.query;
+        const query={status:"approved",_id:{$ne:req.userId}};
+
+        if(name) query.name={$regex:name,$options:"i"};
+        if(email) query.email={$regex:email,$options:"i"};
+        if(company) query.company={$regex:company,$options:"i"};
+        if(location) query.location={$regex:location,$options:"i"}; 
+
+        const result=await Alumni.find(query).select("-password");
+        res.status(200).json(result);
+    } catch (error) {
+        res.status(500).json({message:"Error searching alumni",error:error.message});
+    }
+})
 export default router;

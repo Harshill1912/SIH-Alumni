@@ -1,5 +1,5 @@
 import express from "express";
-import Announcement from "../models/Announcement.js";
+import Announcement from "../models/AnnoucementSchema.js";
 import { verifyAdmin } from "../middleware/verifyAdmin.js";
 
 const router=express.Router();
