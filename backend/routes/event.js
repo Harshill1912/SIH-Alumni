@@ -3,7 +3,7 @@ import Event from "../models/Event.js";
 import Alumni from "../models/Alumni.js";
 import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
-import corn from "node-cron";
+import cron from "node-cron";
 
 const router = express.Router();
 
@@ -23,7 +23,7 @@ const verifyToken = (req, res, next) => {
   });
 };
 
-// Middleware to verify admin (example)
+// Middleware to verify admin
 const verifyAdmin = (req, res, next) => {
   if (req.userRole !== "admin") return res.status(403).json({ error: "Admin access required" });
   next();
@@ -46,7 +46,7 @@ router.post("/", verifyToken, async (req, res) => {
 
     const event = new Event({
       ...req.body,
-      organizedBy: req.userId
+      createdBy: req.userId
     });
 
     await event.save();
@@ -59,7 +59,7 @@ router.post("/", verifyToken, async (req, res) => {
 // ---------------- GET ALL EVENTS ----------------
 router.get("/", async (req, res) => {
   try {
-    const events = await Event.find().populate("organizedBy", "name email company");
+    const events = await Event.find().populate("createdBy", "name email company");
     res.status(200).json(events);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -69,7 +69,7 @@ router.get("/", async (req, res) => {
 // ---------------- GET EVENTS CREATED BY LOGGED-IN ALUMNI ----------------
 router.get("/my/events", verifyToken, async (req, res) => {
   try {
-    const events = await Event.find({ organizedBy: req.userId }).sort({ startDate: 1 });
+    const events = await Event.find({ createdBy: req.userId }).sort({ startDate: 1 });
     res.status(200).json(events.length ? events : { message: "No events created yet", events: [] });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -86,27 +86,31 @@ router.post("/:id/rsvp", verifyToken, async (req, res) => {
     const event = await Event.findById(req.params.id);
     if (!event) return res.status(404).json({ error: "Event not found" });
 
-    if (event.rsvp.length >= event.maxCapacity) return res.status(400).json({ error: "Event is full" });
+    if (event.participants.length >= event.maxCapacity) return res.status(400).json({ error: "Event is full" });
 
-    const alreadyRegistered = event.rsvp.some(r => r.alumniId.toString() === req.userId);
+    const alreadyRegistered = event.participants.some(r => r.alumniId.toString() === req.userId);
     if (alreadyRegistered) return res.status(400).json({ error: "Already registered" });
 
-    event.rsvp.push({
+    event.participants.push({
       alumniId: req.userId,
       email: alumni.email,
-      name: alumni.name
+      name: alumni.name,
+      status: "registered"
     });
 
     await event.save();
 
+    // Prepare location text
     let locationText = "";
     if (event.mode === "online") locationText = `Join online at: ${event.meetingLink}`;
     else if (event.mode === "offline") locationText = `Location: ${event.location}`;
     else if (event.mode === "hybrid") locationText = `Location: ${event.location}\nOnline link: ${event.meetingLink}`;
 
+    // Send confirmation email
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+      tls: { rejectUnauthorized: false }
     });
 
     await transporter.sendMail({
@@ -137,7 +141,7 @@ router.get("/:id/participants", verifyToken, async (req, res) => {
   }
 });
 
-// ---------------- SEND NOTIFICATIONS ----------------
+// ---------------- NOTIFICATIONS ----------------
 router.post("/:id/notify", verifyToken, async (req, res) => {
   try {
     const event = await Event.findById(req.params.id).populate("rsvp.alumniId", "name email");
@@ -172,6 +176,74 @@ router.post("/:id/notify", verifyToken, async (req, res) => {
     res.status(200).json({ message: "Notifications sent to all participants" });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- RSVP CANCELLATION ----------------
+router.put("/:id/cancel", verifyToken, async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const participant = event.rsvp.find(r => r.alumniId.toString() === req.userId);
+    if (!participant) return res.status(400).json({ error: "You are not registered" });
+
+    participant.status = "Canceled";
+    await event.save();
+    res.status(200).json({ message: "RSVP canceled" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- MARK ATTENDANCE ----------------
+router.put("/:id/attendance/:participantId", verifyToken, verifyAdmin, async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (!event) return res.status(404).json({ error: "Event not found" });
+
+    const participant = event.rsvp.id(req.params.participantId);
+    if (!participant) return res.status(404).json({ error: "Participant not found" });
+
+    participant.status = "Attended";
+    await event.save();
+    res.status(200).json({ message: "Attendance marked" });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ---------------- AUTOMATIC REMINDERS ----------------
+cron.schedule("0 8 * * *", async () => {
+  try {
+    const now = new Date();
+
+    const upcomingEvents = await Event.find({
+      startDate: { $gte: now, $lte: new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000) }
+    }).populate("rsvp.alumniId", "name email");
+
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    });
+
+    for (const event of upcomingEvents) {
+      const diffDays = Math.ceil((event.startDate - now) / (1000 * 60 * 60 * 24));
+      if (diffDays === 7 || diffDays === 1) {
+        for (const participant of event.rsvp) {
+          if (participant.status === "Registered") {
+            await transporter.sendMail({
+              from: process.env.EMAIL_USER,
+              to: participant.email,
+              subject: `Reminder: Event ${event.title} in ${diffDays} day(s)`,
+              text: `Hi ${participant.name},\n\nThis is a reminder for the event "${event.title}" at ${event.startDate}.\n\nThank you!`
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error sending reminders:", err.message);
   }
 });
 

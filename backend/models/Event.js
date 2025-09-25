@@ -7,7 +7,7 @@ const eventSchema = new mongoose.Schema({
   mode: { type: String, enum: ["online", "offline", "hybrid"], default: "offline" },
   location: String,
   meetingLink: String,
-
+  image:{type:String,default:"https://www.shutterstock.com/image-vector/event-management-concept-illustration-260nw-1932927431.jpg"},
   startDate: { type: Date, required: true },
   endDate: { type: Date, required: true },
 
